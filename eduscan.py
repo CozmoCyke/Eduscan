@@ -467,6 +467,14 @@ def show_page(page_index: int):
         pdf_image_label.configure(image=current_page_image)
 
     update_page_nav_label()
+    load_page(current_page_index)
+
+
+def load_page(page_index: int):
+    clear_all_tabs()
+    page_data = page_tabs_content.get(page_index, {})
+    for key, tab in page_data.items():
+        set_tab(key, tab["title"], tab["content"])
 
 
 def go_first_page():
@@ -585,6 +593,12 @@ def set_tab(key: str, title: str, content: str):
         notebook.add(frame, text=display_title)
         tabs[key] = {"frame": frame, "text": txt, "title": title}
         notebook.select(frame)
+
+    page_tabs_content.setdefault(current_page_index, {})
+    page_tabs_content[current_page_index][key] = {
+        "title": title,
+        "content": content.rstrip(),
+    }
 
     comparer_versions(show_dialog=False)
 
@@ -941,33 +955,40 @@ def analyser_pdf():
         update_page_nav_label()
 
     # Texte intégré
-    text_integrated = ""
     try:
         reader = PdfReader(pdf_path)
-        for page in reader.pages:
-            t = page.extract_text() or ""
-            integrated_page_texts.append(t)
-            text_integrated += t + "\n\n"
+        for idx, page in enumerate(reader.pages, start=1):
+            text = (page.extract_text() or "").strip()
+            integrated_page_texts.append(text)
+            page_tabs_content[idx] = {}
+
+            if text:
+                if pdf_type == "native":
+                    tab_title = "Texte intégré (PDF natif)"
+                elif pdf_type == "searchable":
+                    tab_title = "Texte intégré (searchable)"
+                else:
+                    tab_title = "Texte intégré (scanner)"
+                tab_content = text
+            else:
+                tab_title = "Texte intégré (aucun)"
+                tab_content = "[Aucun texte intégré détecté – page probablement image-only]"
+
+            page_tabs_content[idx]["integrated"] = {
+                "title": tab_title,
+                "content": tab_content,
+            }
     except Exception as e:
-        text_integrated = f"[Erreur lors de l’extraction du texte intégré : {e}]"
         integrated_page_texts = []
+        page_tabs_content.clear()
+        page_tabs_content[1] = {
+            "integrated": {
+                "title": "Texte intégré (aucun)",
+                "content": f"[Erreur lors de l’extraction du texte intégré : {e}]",
+            }
+        }
 
-    text_integrated = text_integrated.strip()
-    if text_integrated:
-        if pdf_type == "native":
-            tab_title = "Texte intégré (PDF natif)"
-        elif pdf_type == "searchable":
-            tab_title = "Texte intégré (searchable)"
-        else:
-            tab_title = "Texte intégré (scanner)"
-
-        set_tab("integrated", tab_title, text_integrated)
-    else:
-        set_tab(
-            "integrated",
-            "Texte intégré (aucun)",
-            "[Aucun texte intégré détecté – PDF probablement image-only]"
-        )
+    load_page(1)
 
     # Message de statut + images
     if pdf_type == "native":
