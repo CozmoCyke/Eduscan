@@ -909,24 +909,26 @@ def analyser_pdf():
         print(f"[DEBUG] erreur lors de extract_pdf_images dans analyser_pdf : {e}")
         nb_images = 0
 
-    # Aperçu visuel de la 1ʳᵉ page
+    # Aperçu visuel : charger toutes les pages en images (multi-pages)
     try:
         poppler_bin = ensure_poppler()
         pages = convert_from_path(pdf_path, 150, poppler_path=poppler_bin)
-        first_page = pages[0]
     except Exception as e:
         messagebox.showerror("Aperçu PDF", f"Impossible de lire le PDF :\n{e}")
         return
 
     max_width, max_height = 600, 700
-    w, h = first_page.size
-    scale = min(max_width / w, max_height / h, 1.0)
-    if scale < 1.0:
-        first_page = first_page.resize((int(w * scale), int(h * scale)))
+    page_images = []
+    for page in pages:
+        w, h = page.size
+        scale = min(max_width / w, max_height / h, 1.0)
+        if scale < 1.0:
+            page = page.resize((int(w * scale), int(h * scale)))
+        page_images.append(ImageTk.PhotoImage(page))
 
-    current_page_image = ImageTk.PhotoImage(first_page)
-    page_images = [current_page_image]
-    pdf_image_label.configure(image=current_page_image)
+    if page_images:
+        current_page_image = page_images[0]
+        pdf_image_label.configure(image=current_page_image)
 
     # Texte intégré
     text_integrated = ""
