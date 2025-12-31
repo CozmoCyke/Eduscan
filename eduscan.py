@@ -910,25 +910,35 @@ def analyser_pdf():
         nb_images = 0
 
     # Aperçu visuel : charger toutes les pages en images (multi-pages)
+    global page_images, current_page_image, current_page_index
+
     try:
         poppler_bin = ensure_poppler()
         pages = convert_from_path(pdf_path, 150, poppler_path=poppler_bin)
+        if not pages:
+            raise RuntimeError("Aucune page dans le PDF ?")
     except Exception as e:
         messagebox.showerror("Aperçu PDF", f"Impossible de lire le PDF :\n{e}")
         return
 
-    max_width, max_height = 600, 700
+    # Préparer les images redimensionnées pour chaque page
     page_images = []
-    for page in pages:
-        w, h = page.size
+    max_width, max_height = 600, 700
+
+    for img in pages:
+        w, h = img.size
         scale = min(max_width / w, max_height / h, 1.0)
         if scale < 1.0:
-            page = page.resize((int(w * scale), int(h * scale)))
-        page_images.append(ImageTk.PhotoImage(page))
+            img = img.resize((int(w * scale), int(h * scale)))
+        tk_img = ImageTk.PhotoImage(img)
+        page_images.append(tk_img)
 
+    # Afficher la première page si disponible
     if page_images:
+        current_page_index = 1
         current_page_image = page_images[0]
         pdf_image_label.configure(image=current_page_image)
+        update_page_nav_label()
 
     # Texte intégré
     text_integrated = ""
