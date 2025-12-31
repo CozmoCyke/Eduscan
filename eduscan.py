@@ -61,11 +61,18 @@ current_pdf_path = None
 current_page_image = None  # PhotoImage pour le label
 current_pdf_type = None    # "native", "image_only", "searchable", "unknown"
 
+# Gestion multi-pages (progressif)
+page_images = []           # list[PhotoImage], une par page
+current_page_index = 1     # 1-based
+integrated_page_texts = [] # list[str], texte intégré par page
+
 # Cache d’images extraites du PDF : liste de (page_index, tk_image)
 pdf_images_cache = []
 
 # Onglets : clé → {"frame": frame, "text": text_widget, "title": title}
 tabs = {}
+page_tabs_content = {}  # page_index -> { key: {"title": str, "content": str} }
+page_best_texts = {}    # page_index -> str
 winner_tab_key = None  # onglet actuellement marqué comme "meilleur"
 
 # ─────────────────────────────────────────
@@ -434,6 +441,54 @@ def ocr_image_vision(path: str) -> str:
     return response.full_text_annotation.text
 
 # ─────────────────────────────────────────
+# NAVIGATION PAGES (préparation multi-pages)
+# ─────────────────────────────────────────
+
+def update_page_nav_label():
+    total_pages = len(page_images) if page_images else len(integrated_page_texts)
+    if total_pages <= 0:
+        page_nav_label.config(text="Page 0/0")
+        return
+    page_nav_label.config(text=f"Page {current_page_index}/{total_pages}")
+
+
+def show_page(page_index: int):
+    global current_page_index, current_page_image
+    total_pages = len(page_images) if page_images else len(integrated_page_texts)
+    if total_pages <= 0:
+        update_page_nav_label()
+        return
+
+    page_index = max(1, min(page_index, total_pages))
+    current_page_index = page_index
+
+    if page_images and 1 <= page_index <= len(page_images):
+        current_page_image = page_images[page_index - 1]
+        pdf_image_label.configure(image=current_page_image)
+
+    update_page_nav_label()
+
+
+def go_first_page():
+    show_page(1)
+
+
+def go_prev_page():
+    show_page(current_page_index - 1)
+
+
+def go_next_page():
+    show_page(current_page_index + 1)
+
+
+def go_last_page():
+    total_pages = len(page_images) if page_images else len(integrated_page_texts)
+    if total_pages <= 0:
+        show_page(1)
+        return
+    show_page(total_pages)
+
+# ─────────────────────────────────────────
 # UI PRINCIPALE
 # ─────────────────────────────────────────
 
@@ -468,6 +523,24 @@ main_pane.add(right_frame, weight=2)
 # Image du PDF à gauche
 pdf_image_label = tk.Label(left_frame, bg="black")
 pdf_image_label.pack(fill=tk.BOTH, expand=True)
+
+# Barre de navigation pages (préparation multi-pages)
+nav_frame = tk.Frame(left_frame, bg="grey")
+nav_frame.pack(fill=tk.X, pady=4)
+
+btn_first_page = tk.Button(nav_frame, text="⏮", width=3, command=lambda: go_first_page())
+btn_prev_page = tk.Button(nav_frame, text="◀", width=3, command=lambda: go_prev_page())
+btn_next_page = tk.Button(nav_frame, text="▶", width=3, command=lambda: go_next_page())
+btn_last_page = tk.Button(nav_frame, text="⏭", width=3, command=lambda: go_last_page())
+
+btn_first_page.pack(side=tk.LEFT, padx=2)
+btn_prev_page.pack(side=tk.LEFT, padx=2)
+
+page_nav_label = tk.Label(nav_frame, text="Page 0/0", bg="grey")
+page_nav_label.pack(side=tk.LEFT, padx=8)
+
+btn_next_page.pack(side=tk.LEFT, padx=2)
+btn_last_page.pack(side=tk.LEFT, padx=2)
 
 # Notebook à droite
 notebook = ttk.Notebook(right_frame)
@@ -807,6 +880,8 @@ def analyser_pdf():
     - compte les images et affiche une fenêtre d’aperçu si > 1
     """
     global current_pdf_path, current_page_image, current_pdf_type
+    global page_images, current_page_index, integrated_page_texts
+    global page_tabs_content, page_best_texts
 
     pdf_path = filedialog.askopenfilename(
         filetypes=[("PDF Files", "*.pdf")],
@@ -816,7 +891,12 @@ def analyser_pdf():
         return
 
     clear_all_tabs()
+    page_tabs_content.clear()
+    page_best_texts.clear()
     current_pdf_path = pdf_path
+    page_images = []
+    integrated_page_texts = []
+    current_page_index = 1
 
     pdf_type = detect_pdf_type(pdf_path)
     current_pdf_type = pdf_type
@@ -845,6 +925,7 @@ def analyser_pdf():
         first_page = first_page.resize((int(w * scale), int(h * scale)))
 
     current_page_image = ImageTk.PhotoImage(first_page)
+    page_images = [current_page_image]
     pdf_image_label.configure(image=current_page_image)
 
     # Texte intégré
@@ -853,9 +934,11 @@ def analyser_pdf():
         reader = PdfReader(pdf_path)
         for page in reader.pages:
             t = page.extract_text() or ""
+            integrated_page_texts.append(t)
             text_integrated += t + "\n\n"
     except Exception as e:
         text_integrated = f"[Erreur lors de l’extraction du texte intégré : {e}]"
+        integrated_page_texts = []
 
     text_integrated = text_integrated.strip()
     if text_integrated:
@@ -895,6 +978,8 @@ def analyser_pdf():
             f"PDF analysé : type non déterminé (unknown). "
             f"Images détectées : {nb_images}."
         )
+
+    update_page_nav_label()
 
     # Afficher les images dans une fenêtre séparée seulement s'il y en a PLUS d'une
     if nb_images > 1:
